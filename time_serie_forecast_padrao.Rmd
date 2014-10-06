@@ -1,0 +1,311 @@
+Relatório de Análise de Séries Temporais
+========================================================
+
+
+```{r, echo=FALSE}
+library('forecast', quietly = TRUE, warn.conflicts = FALSE)
+library('ggplot2', quietly = TRUE, warn.conflicts = FALSE)
+library('scales', quietly = TRUE, warn.conflicts = FALSE)
+library('TSA',      quietly = TRUE, warn.conflicts = FALSE) # McLeod.li.test
+
+#library('lattice',  quietly = TRUE, warn.conflicts = FALSE)
+#library('tseries',  quietly = TRUE, warn.conflicts = FALSE)
+#library('fractal',  quietly = TRUE, warn.conflicts = FALSE)
+
+#library('fGarch',   quietly = TRUE, warn.conflicts = FALSE)
+#library('forecast', quietly = TRUE, warn.conflicts = FALSE)
+
+#library('nortest') # testes de normalidade
+#library('tgp')
+#library('maptree'); # Gaussian 
+
+
+source('script_boot.R')
+
+data(gas)
+d <- gas
+rm(gas)
+d_titulo = 'Australian monthly gas production'
+
+d.column.name = d_titulo
+d.ylab = 'gas'
+d.xlab = 'Meses'
+d.periodo.forecast = 52
+
+
+#load(file="forecast.rda")
+
+
+```
+
+Este relatório tem como objecto de análise 
+
+```{r, cache=FALSE, echo=FALSE}
+d.l = log(d)
+d.d = diff(d)
+d.dl = diff(log(d))
+d.dd = diff(diff(d))
+d.ddl = diff(diff(log(d)))
+d.dpercent = diff(log(d))*100
+d.media = mean(d)
+d.sd = sd(d)
+
+#Z score
+d.z <- (d-d.media)/d.sd
+
+# forecast
+
+```
+
+Dados originais:
+-------------------------
+
+```{r, echo=FALSE}
+d
+```
+
+
+```{r fig.width=11, fig.height=8, echo=FALSE}
+plot(d, main=d_titulo, xlab=d.xlab, ylab= d.ylab)
+```
+
+```{r fig.width=11, fig.height=10, echo=FALSE}
+par(mfrow=c(3,2));
+plot.rootunit(d, main=d.column.name, xlab=d.xlab, ylab= d.ylab)
+plot.rootunit(d.l, main='Log', xlab=d.xlab, ylab= paste('log(',d.ylab,')'))
+plot.rootunit(d.d, main='Diferen?a', xlab=d.xlab, ylab=paste('diff(',d.ylab,')'))
+plot.rootunit(d.dl, main='Diferen?a dos Logs', xlab=d.xlab, ylab=paste('diff(log(',d.ylab,'))'))
+plot.rootunit(d.dd, main=expression('Diferen?a'^2~' '), xlab=d.xlab, ylab=paste('diff(diff(',d.ylab,'))'))
+plot.rootunit(d.ddl, main=expression('Diferen?a'^2~' dos Logs'), xlab=d.xlab, ylab=paste('diff(diff(log(',d.ylab,')))'))
+```
+
+Análise de Sazonalidade
+-------------------------
+```{r fig.width=11, fig.height=10, echo=FALSE}
+seasonplot(d, main='Gr?fico da Sazonalidade', xlab='M?s', ylab= d.ylab)
+```
+
+```{r fig.width=11, fig.height=10, echo=FALSE}
+monthplot(d, main='Gr?fico de Crescimento Mensal', xlab='M?s', ylab= d.ylab)
+```
+
+### Sazonalidade - Autocorrelações
+```{r fig.width=11, fig.height=10, echo=FALSE}
+tryCatch(lag.plot1(d,min(12,length(d)-1),smooth=T), error = function(e) {} )
+```
+
+### Seasonal Decomposition of Time Series by Loess
+```{r fig.width=11, fig.height=10, echo=FALSE}
+d.stl <- stl(d, s.window = frequency(d), t.window = frequency(d), robust = FALSE)
+d.stl.robust <- stl(d, s.window = frequency(d), t.window = frequency(d), robust = TRUE)
+
+# write.table(d.stl$time.series, file= paste(d.column.name,'_decomposicao_sazonalidade.csv',sep=''),sep=';',dec=',')
+
+#write.table(d.stl.robust$time.series, file= paste(d.column.name,'_decomposicao_sazonalidade_robusta.csv',sep=''),sep=';',dec=',')
+```
+
+
+```{r fig.width=11, fig.height=10, echo=FALSE}
+try(par(mar = c(0, 4, 0, 3), oma = c(5, 0, 4, 0), mfcol = c(4, 2)))
+plot(d.stl, set.pars=NULL, labels = NULL, main = "Decomposi??o por Loess (Normal / Robusta )")
+plot(d.stl.robust, set.pars=NULL)
+iO <- which(d.stl.robust$weights  < 1e-8)
+sts <- d.stl.robust$time.series
+points(time(sts)[iO], 0.8* sts[,"remainder"][iO], pch = 4, col = "red")
+```
+
+Outros testes
+-------------------------
+
+### McLeod-Li test for conditional heteroscedascity (ARCH)
+```{r fig.width=11, fig.height=10, echo=FALSE}
+par(mfrow=c(3,2))
+McLeod.Li.test(y=d, main='McLeod-Li test (d)')
+McLeod.Li.test(y=d.l, main='McLeod-Li test (d.l)')
+McLeod.Li.test(y=d.d, main='McLeod-Li test (d.d)')
+McLeod.Li.test(y=d.dl, main='McLeod-Li test (d.dl)')
+McLeod.Li.test(y=d.dd, main='McLeod-Li test (d.dd)')
+McLeod.Li.test(y=d.ddl, main='McLeod-Li test (d.ddl)')
+```
+
+Projeções
+-------------------------
+
+
+### Space-State Model (ETS)
+```{r ETS, echo=FALSE}
+d.ets <- ets(d)
+summary(d.ets)
+d.forecast.ets <- forecast(d.ets,h=d.periodo.forecast)
+write.table(d.forecast.ets, file= paste(d.column.name,'_ets.csv',sep=''),sep=',',dec='.')
+summary(d.forecast.ets)
+```
+
+```{r fig.width=11, fig.height=10, echo=FALSE}
+plot(d.forecast.ets, main=paste(d.column.name," - Previs?o ETS",sep = ""), sub=paste("Modelo: ", d.forecast.ets$method, "", sep = ""), col="black");
+lines(d.forecast.ets$fitted, col="blue");
+```
+
+```{r fig.width=11, fig.height=10, echo=FALSE}
+plot(d.ets)
+```
+
+### Arima - Pr? an?lise
+
+
+### Arima - Autocorrelation 
+```{r fig.width=11, fig.height=10, echo=FALSE}
+par(mfrow=c(3,2))
+acf(d, main=d.column.name, na.action=na.pass)
+acf(d.l, main='Log', na.action=na.pass)
+acf(d.d, main='Diferen?a', na.action=na.pass)
+acf(d.dl, main='Diferen?a dos Logs', na.action=na.pass)
+acf(d.dd, main=expression('Diferen?a'^2~' '), na.action=na.pass)
+acf(d.ddl, main=expression('Diferen?a'^2~' dos Logs'), na.action=na.pass)
+```
+
+### Arima - Partial Autocorrelation
+```{r fig.width=11, fig.height=10, echo=FALSE}
+par(mfrow=c(3,2))
+pacf(d, main=d.column.name,  na.action=na.pass)
+pacf(d.l, main='Log',  na.action=na.pass)
+pacf(d.d, main='Diferen?a',  na.action=na.pass)
+pacf(d.dl, main='Diferen?a dos Logs',  na.action=na.pass)
+pacf(d.dd, main=expression('Diferen?a'^2~' '), na.action=na.pass)
+pacf(d.ddl, main=expression('Diferen?a'^2~' dos Logs'), na.action=na.pass)
+```
+
+### Arima - Proje??o
+```{r Arima, echo=FALSE}
+d.arima <- auto.arima(d, trace=TRUE, stepwise=TRUE, allowdrift=TRUE); 
+d.forecast.arima <- forecast(d.arima,h=d.periodo.forecast)
+write.table(d.forecast.arima, file= paste(d.column.name,'_arima.csv',sep=''),sep=',',dec='.')
+summary(d.forecast.arima)
+```
+
+```{r fig.width=11, fig.height=10, echo=FALSE}
+plot(d.forecast.arima, main=paste(d.column.name," - Previs?o ARIMA ",sep = ""), sub=paste("Modelo: ", d.forecast.arima$method, "", sep = ""), col="black")
+lines(d.forecast.arima$fitted, col="blue")
+```
+
+### Linear Model 
+```{r Linerar_Model, echo=FALSE}
+d.lm <- lm(d~time(d))
+d.lm.summary <- summary(d.lm)
+d.tslm <- tslm(d ~ trend + season)
+d.tslm.summary <- summary(d.tslm)
+d.forecast.tslm <- forecast(d.tslm, h=d.periodo.forecast)
+write.table(d.forecast.tslm, file= paste(d.column.name,'_tslm.csv',sep=''),sep=',',dec='.')
+```
+
+```{r fig.width=11, fig.height=10, echo=FALSE}
+plot(d, main="Regress?o linear", xlab=d.xlab, ylab= d.ylab)
+abline(d.lm,col="blue")
+mtext(paste("Reta ajustada: Y=",d.lm$coefficients[1]," + x*",d.lm$coefficients[2],sep=""), col="blue", adj=0, cex=0.7)
+mtext(substitute(paste(chi^2, "=", k), list(k = d.lm.summary$r.squared)), col="blue", adj=1, cex=0.7)
+```
+
+```{r echo=FALSE}
+print(d.lm.summary)
+```
+
+```{r fig.width=11, fig.height=10, echo=FALSE}
+par(mfrow=c(3,2))
+plot(d.lm, which = c(1:6))
+```
+
+```{r echo=FALSE}
+anova(d.lm)
+```
+
+
+### Trend - Seazonal Linear Model 
+```{r fig.width=11, fig.height=10, echo=FALSE}
+plot(d.forecast.tslm, main="Regress?o linear sazonal", xlab="Tempo", ylab= d.ylab)
+```
+
+```{r echo=FALSE}
+print(d.tslm.summary)
+```
+
+```{r echo=FALSE}
+anova(d.tslm)
+```
+
+
+```{r fig.width=11, fig.height=10, echo=FALSE}
+plot(d, col="black", lwd=2, xlab=d.xlab, ylab= d.ylab, main='ARIMA X ETS X TSLM')
+lines(d.forecast.ets$fitted, col="blue", lty=2)
+lines(d.forecast.arima$fitted, col="green", lty=2)
+lines(d.forecast.tslm$fitted, col="brown", lty=2)
+legend('topleft', legend=c('ETS','ARIMA','TSLM'), text.col=c('blue','green','brown'), bg='white', cex=0.7)
+```
+
+
+### Compara??o de Modelos
+```{r fig.width=11, fig.height=10, echo=FALSE}
+par(mfrow=c(3,1))
+plot(d.forecast.ets, main='Previs?o ETS', sub=paste('Modelo: ', d.forecast.ets$method, '', sep = ''), col='black')
+lines(d.forecast.ets$fitted, col='blue')
+
+plot(d.forecast.arima, main='Previs?o Arima', sub=paste('Modelo: ', d.forecast.arima$method, '', sep = ''), col='black')
+lines(d.forecast.arima$fitted, col='blue')
+
+plot(d.forecast.tslm, main='Previs?o TSLM', col='black')
+lines(d.forecast.tslm$fitted, col='blue')
+```
+
+### Erros
+```{r fig.width=11, fig.height=10, echo=FALSE}
+par(mfrow=c(2,1))
+barplot(rbind(accuracy(d.ets)[1:3],accuracy(d.arima)[1:3],accuracy(d.tslm)[1:3]),beside=TRUE, col=c('gray10','gray80','gray50'))
+barplot(rbind(accuracy(d.ets)[4:6],accuracy(d.arima)[4:6],accuracy(d.tslm)[4:6]),beside=TRUE, col=c('gray10','gray80','gray50'))
+legend('topleft', legend=c('ETS','ARIMA','TSLM'), text.col=c('gray10','gray80','gray50'), bg='white', cex=1)
+```
+
+
+###  Residuos ETS
+```{r fig.width=11, fig.height=10, echo=FALSE}
+d.resid = resid(d.ets)
+par(mfrow=c(3,2))
+acf(d.resid, main="Correla??o dos Residuos - ETS")
+pacf(d.resid, main="Correla??o Parcial dos Residuos - ETS")
+d.ets.residuals.std <- residuals(d.ets)/d.ets$sigma2^0.5
+plot(d.ets.residuals.std, main = "Standardized Residuals - ETS", ylab="Std.Dev. of Residuals", type = "h")
+abline(h=0)
+try(qqnorm(d.resid));
+try(qqline(d.resid));
+hist(d.resid, col = "gray", main = "Histogram", xlab = "")
+cpgram(d.resid, main = "Cumulative Periodogram - ETS")
+```
+
+###  Residuos ARIMA
+```{r fig.width=11, fig.height=10, echo=FALSE}
+d.resid = resid(d.arima)
+par(mfrow=c(3,2))
+acf(d.resid, main="Correla??o dos Residuos - Arima")
+pacf(d.resid, main="Correla??o Parcial dos Residuos - Arima")
+d.arima.residuals.std <- residuals(d.arima)/d.arima$sigma2^0.5
+plot(d.arima.residuals.std, main = "Standardized Residuals - Arima", ylab="Std.Dev. of Residuals", type = "h")
+abline(h=0)
+try(qqnorm(d.resid));
+try(qqline(d.resid));
+hist(d.resid, col = "gray", main = "Histogram", xlab = "")
+cpgram(d.resid, main = "Cumulative Periodogram - Arima")
+```
+
+###  Residuos TSLM
+```{r fig.width=11, fig.height=10, echo=FALSE}
+d.resid = resid(d.tslm)
+par(mfrow=c(3,2))
+acf(d.resid, main="Correla??o dos Residuos - TSLM")
+pacf(d.resid, main="Correla??o Parcial dos Residuos - TSLM")
+#d.tslm.residuals.std <- residuals(d.tslm)/d.tslm$sigma2^0.5
+d.tslm.residuals.std <- d.resid/sd(d.resid)
+plot(d.tslm.residuals.std, main = "Standardized Residuals - TSLM", ylab="Std.Dev. of Residuals", type = "h")
+abline(h=0)
+try(qqnorm(d.resid));
+try(qqline(d.resid));
+hist(d.resid, col = "gray", main = "Histogram", xlab = "")
+cpgram(d.resid, main = "Cumulative Periodogram - TSLM")
+```

@@ -1,0 +1,10 @@
+base
+forecast
+ggplot2
+knitr
+leaps
+locfit
+mgcv
+scales
+TSA
+tseries
